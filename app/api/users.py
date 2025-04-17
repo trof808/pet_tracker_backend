@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Response
-from sqlalchemy.orm import Session
 from datetime import timedelta
+
 # from app.database import get_db
 from app.database import SessionDep
 from app.schemas.user import UserCreate, UserResponse
@@ -8,9 +8,9 @@ from app.models.user import User
 from app.services.user import create_user, get_user_by_email
 from app.auth.security import (
     create_access_token,
-    verify_password,
     ACCESS_TOKEN_EXPIRE_MINUTES,
 )
+from app.auth.auth import get_current_user
 import bcrypt
 
 router = APIRouter()
@@ -51,10 +51,35 @@ def sign_in(response: Response, user: UserCreate, session: SessionDep):
         httponly=True,
         secure=True,
         samesite="lax",
+        domain="localhost",
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.get("/check_auth")
+def check_auth(session: SessionDep, current_user=Depends(get_current_user)):
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        )
+    user_data = get_user(current_user.get("id"), session)
+    try:
+        return {
+            "data": {
+                "id": user_data.id,
+                "email": user_data.email,
+                "auth": True,
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token or expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 def get_user(user_id: int, session: SessionDep) -> User:
